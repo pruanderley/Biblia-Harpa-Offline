@@ -3504,15 +3504,19 @@ function startVoice() {
   if (_hasAndroidBridge()) {
     try {
       if (window.Android.acquireWakeLock) window.Android.acquireWakeLock();
+      // Notificação persistente — mantém processo vivo em segundo plano
+      if (typeof window.Android.startReadingForeground === 'function') {
+        window.Android.startReadingForeground(
+          book.name + ' ' + (currentChapter + 1),
+          'Bíblia JFA Offline'
+        );
+      }
       _requestWakeLock();
       ttsRunning = true;
       _startIosAudioSession();
-      _startTtsAudioKeepalive(); // essencial: mantém a sessão de áudio "ativa" para o Android não suspender o app com a tela apagada/minimizado
       _setVoicePlayingUI(true, '▶ ' + book.name + ' ' + (currentChapter + 1) + ' — ' + _ttsCount + ' versículos');
       _startTtsKeepalive();
-      _startTtsNativeKeepalive();
       _androidSpeakNext();
-      // Restaura scroll para o versículo selecionado
       setTimeout(() => { if (content && savedScroll > 0) content.scrollTop = savedScroll; }, 100);
       return;
     } catch(e) {
@@ -3579,7 +3583,7 @@ function _androidSpeakNext() {
 window.onTTSVerseFinished = () => {
   if (!ttsRunning) return;
   _ttsIdx++;
-  setTimeout(_androidSpeakNext, 150);
+  _androidSpeakNext(); // direto — sem setTimeout que é throttled em background
 };
 
 // ── FALAR PRÓXIMO VERSO ───────────────────────
@@ -3667,12 +3671,12 @@ function stopVoice() {
   ttsUtterance = null;
   _ttsIdx      = _ttsQueue.length;
   _stopTtsKeepalive();
-  _stopTtsNativeKeepalive();
 
   // AndroidBridge
   if (_hasAndroidBridge()) {
     try { if (window.Android.stopTTS) window.Android.stopTTS(); } catch(e) {}
     try { if (window.Android.releaseWakeLock) window.Android.releaseWakeLock(); } catch(e) {}
+    try { if (typeof window.Android.stopReadingForeground === 'function') window.Android.stopReadingForeground(); } catch(e) {}
   }
   try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch(e) {}
   _stopIosAudioSession();
@@ -3704,28 +3708,6 @@ function _startTtsKeepalive() {
 }
 function _stopTtsKeepalive() {
   if (ttsKeepaliveInterval) { clearInterval(ttsKeepaliveInterval); ttsKeepaliveInterval = null; }
-}
-
-// Keepalive específico da bridge nativa: em alguns aparelhos o Android
-// suspende a chamada nativa de TTS silenciosamente quando a tela apaga.
-// A cada 4s, se ainda devia estar lendo, pedimos ao nativo pra retomar.
-var ttsNativeKeepaliveInterval = null;
-function _startTtsNativeKeepalive() {
-  _stopTtsNativeKeepalive();
-  ttsNativeKeepaliveInterval = setInterval(() => {
-    if (!ttsRunning) { _stopTtsNativeKeepalive(); return; }
-    try {
-      if (window.Android && typeof window.Android.resumeTTS === 'function') {
-        window.Android.resumeTTS();
-      }
-      if (window.Android && typeof window.Android.acquireWakeLock === 'function') {
-        window.Android.acquireWakeLock();
-      }
-    } catch(e) {}
-  }, 4000);
-}
-function _stopTtsNativeKeepalive() {
-  if (ttsNativeKeepaliveInterval) { clearInterval(ttsNativeKeepaliveInterval); ttsNativeKeepaliveInterval = null; }
 }
 
 // ── HELPERS ───────────────────────────────────
@@ -3808,8 +3790,6 @@ function _ttsFinished(msg) {
       // Fim da Bíblia
       ttsRunning = false;
       _stopTtsKeepalive();
-      _stopTtsNativeKeepalive();
-      _stopTtsAudioKeepalive();
       _stopIosAudioSession();
       document.querySelectorAll('.verse.tts-reading').forEach(el => el.classList.remove('tts-reading'));
       _setVoicePlayingUI(false, '🎉 Bíblia completa lida!');
@@ -3820,16 +3800,15 @@ function _ttsFinished(msg) {
     lastSelectedVerse = null;
     renderChapter();
     _setProgress('📖 ' + bibleData[currentBook].name + ' ' + (currentChapter + 1) + '...');
-    setTimeout(() => {
-      if (!ttsRunning) return;
-      _ttsQueue = _buildQueue();
-      _ttsIdx   = 0;
-      if (_hasWebSpeech()) {
-        _ttsSpeakNext();
-      } else if (_hasAndroidBridge()) {
-        _androidSpeakNext();
-      }
-    }, 800); // pausa entre capítulos
+    _ttsQueue = _buildQueue();
+    _ttsIdx   = 0;
+    if (_hasAndroidBridge()) {
+      // Bridge nativa: chama direto, sem setTimeout — timer é throttled em background
+      _androidSpeakNext();
+    } else if (_hasWebSpeech()) {
+      // WebSpeech: pequena pausa para o DOM renderizar
+      setTimeout(_ttsSpeakNext, 100);
+    }
     return;
   }
 
@@ -3837,8 +3816,6 @@ function _ttsFinished(msg) {
   ttsRunning   = false;
   ttsUtterance = null;
   _stopTtsKeepalive();
-  _stopTtsNativeKeepalive();
-  _stopTtsAudioKeepalive();
   _stopIosAudioSession();
   document.querySelectorAll('.verse.tts-reading').forEach(el => el.classList.remove('tts-reading'));
   _setVoicePlayingUI(false, msg);
@@ -5513,6 +5490,7 @@ var HP_DATA = (typeof HARPA_DATA !== 'undefined') ? HARPA_DATA : [];
 var hp_currentIndex = -1;
 var hp_playbackMode = 'sequential';
 var hp_isAudioLoading = false;
+var hp_nativePlaying  = false; // true quando áudio toca via Android bridge
 var hp_currentObjectUrl = null;
 var hp_GITHUB_OWNER = 'pruanderley';
 var hp_GITHUB_REPO  = 'harpa-audio';
@@ -5993,13 +5971,35 @@ function hp_toggleAudio(){ var p=hp_getPlayer(); if(p.paused) hp_startAudio(); e
 
 async function hp_startAudio() {
   var h=HP_DATA[hp_currentIndex]; if(!h) return;
-  // WakeLock nativo via Android bridge
+
+  // ── Player nativo via Android bridge (foreground service + notificação) ──
+  if (typeof window.Android !== 'undefined' &&
+      typeof window.Android.playHarpaUrl === 'function') {
+    if (hp_isAudioLoading) return;
+    hp_isAudioLoading = true;
+    hp_setProgress('🔎 Localizando...');
+    var url;
+    try { url = await hp_urlFor(h.numero); } catch(e) {
+      hp_setProgress('❌ ' + e.message); hp_setUI(false, null); hp_isAudioLoading = false; return;
+    }
+    if (!url) { hp_setProgress('❌ Hino ' + h.numero + ' não encontrado'); hp_setUI(false, null); hp_isAudioLoading = false; return; }
+    try {
+      window.Android.playHarpaUrl(url, 'Hino ' + h.numero + ' — ' + h.titulo, 'Harpa Cristã Offline');
+      hp_nativePlaying = true;
+      hp_setUI(true, 'Tocando: ' + h.titulo);
+      hp_setupMediaSession();
+    } catch(e) {
+      hp_setProgress('❌ ' + e.message); hp_setUI(false, null);
+    } finally { hp_isAudioLoading = false; }
+    return;
+  }
+
+  // ── Fallback: HTML5 audio ──
   try {
     if (typeof window.Android !== 'undefined' && window.Android.acquireWakeLock) {
       window.Android.acquireWakeLock();
     }
   } catch(e) {}
-  // WakeLock web fallback
   try {
     if ('wakeLock' in navigator && !hp_wakeLock) {
       hp_wakeLock = await navigator.wakeLock.request('screen');
@@ -6136,8 +6136,39 @@ async function hp_playNextFromPrefetch(nextIdx) {
   // Sem pré-carga disponível (ex.: app acabou de abrir) — faz o fluxo normal
   hp_startAudio();
 }
+// Callback nativo — chamado pelo AudioForegroundService quando hino termina
+window.onHarpaEnded = function() {
+  hp_nativePlaying = false;
+  hp_setUI(false, null);
+  if (hp_playbackMode === 'sequential' && hp_currentIndex < HP_DATA.length - 1) {
+    hp_currentIndex++;
+    hp_renderDetail();
+    setTimeout(hp_startAudio, 400);
+  } else if (hp_playbackMode === 'repeat') {
+    setTimeout(hp_startAudio, 400);
+  } else if (hp_playbackMode === 'random') {
+    var r = hp_currentIndex;
+    while (r === hp_currentIndex) r = Math.floor(Math.random() * HP_DATA.length);
+    hp_currentIndex = r;
+    hp_renderDetail();
+    setTimeout(hp_startAudio, 400);
+  }
+};
+
+window.onHarpaError = function() {
+  hp_setUI(false, null);
+  hp_setProgress('❌ Erro ao tocar áudio.');
+};
+
 function hp_pauseAudio(){
-  var p=hp_getPlayer(); p.pause(); hp_setUI(false,'Pausado');
+  hp_nativePlaying = false;
+  // Pausa via bridge nativa se disponível
+  if (typeof window.Android !== 'undefined' && typeof window.Android.pauseHarpa === 'function') {
+    try { window.Android.pauseHarpa(); } catch(e) {}
+  } else {
+    var p = hp_getPlayer(); p.pause();
+  }
+  hp_setUI(false,'Pausado');
   if('mediaSession' in navigator) navigator.mediaSession.playbackState='paused';
   try { if (hp_wakeLock) { hp_wakeLock.release(); hp_wakeLock = null; } } catch(e) {}
   try {
@@ -6175,17 +6206,20 @@ function hp_syncEq(){
 }
 // Atualiza indicador só no hino que está tocando
 function hp_updatePlayingIndicator() {
-  var p = hp_getPlayer();
-  var playing = p && !p.paused && p.src;
-  var playingNum = p ? p.dataset.hymnNumero : null;
-  var curH = HP_DATA[hp_currentIndex];
-  var isCurrentPlaying = playing && curH && String(curH.numero) === String(playingNum);
+  var playing;
+  if (hp_nativePlaying) {
+    // Player nativo (Android bridge) — usa a flag
+    playing = true;
+  } else {
+    var p = hp_getPlayer();
+    playing = p && !p.paused && p.src;
+  }
   var indicator = document.getElementById('hp-playing-indicator');
   var bars = document.getElementById('hp-bars');
   var label = document.getElementById('hp-playing-label');
-  if(indicator) indicator.classList.toggle('show', !!isCurrentPlaying);
-  if(bars) bars.classList.toggle('paused', !isCurrentPlaying);
-  if(label) label.textContent = isCurrentPlaying ? 'Tocando agora' : '';
+  if(indicator) indicator.classList.toggle('show', !!playing);
+  if(bars) bars.classList.toggle('paused', !playing);
+  if(label) label.textContent = playing ? 'Tocando agora' : '';
 }
 
 function hp_setUI(playing,msg){
