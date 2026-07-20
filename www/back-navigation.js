@@ -69,7 +69,13 @@
       }
     }
 
-    // 3. Mostra diálogo — não fecha ainda
+    // 3. Navegação de capítulo (gesto/seta/botão) — desfaz para o capítulo anterior
+    if (history.state && history.state.chapNav) {
+      history.back();
+      return true;
+    }
+
+    // 4. Mostra diálogo — não fecha ainda
     showBibliaExitDialog();
     return true; // mantém app aberto até usuário confirmar
   }
