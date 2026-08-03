@@ -47,6 +47,12 @@ public class MainActivity extends BridgeActivity {
         webView = getBridge().getWebView();
         webView.addJavascriptInterface(new TTSBridge(), "Android");
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        webView.getSettings().setSaveFormData(true);
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_YES);
+        }
 
         // Callback do AudioForegroundService → JS
         AudioForegroundService.callback = new AudioForegroundService.Callback() {
@@ -152,6 +158,28 @@ public class MainActivity extends BridgeActivity {
                     runOnUiThread(() -> webView.evaluateJavascript(
                         "if(typeof window.onHarpaError==='function') window.onHarpaError();", null));
                 }
+            });
+        }
+
+        // Pede para o Android ignorar a otimização de bateria para o app.
+        // No MIUI/Xiaomi isso não substitui as configs próprias da MIUI
+        // (Autostart, "Sem restrições", travar nos recentes), mas ajuda e
+        // é a via oficial do Android — sem ela o MIUI mata o serviço mais fácil.
+        @JavascriptInterface
+        public void requestIgnoreBatteryOptimizations() {
+            runOnUiThread(() -> {
+                try {
+                    android.os.PowerManager pm =
+                        (android.os.PowerManager) getSystemService(POWER_SERVICE);
+                    String pkg = getPackageName();
+                    if (pm != null && !pm.isIgnoringBatteryOptimizations(pkg)) {
+                        Intent intent = new Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + pkg));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                    }
+                } catch (Exception e) { e.printStackTrace(); }
             });
         }
 
