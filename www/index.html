@@ -2588,7 +2588,7 @@
     </div>
     <form onsubmit="return false;" autocomplete="on" style="display:contents;">
       <div id="note-textarea" contenteditable="true" data-placeholder="Escreva sua anotação ou reflexão..."
-        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text"></div>
+        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text" lang="pt-BR"></div>
     </form>
     <div class="note-actions">
       <button class="note-del-btn" onclick="deleteNote()" title="Excluir anotação">🗑</button>
@@ -3214,6 +3214,17 @@ function editNoteFromView() {
   setTimeout(() => openNoteEditor(), 200);
 }
 
+// ------------------------------------------------------------
+// CORREÇÃO: FLAG DE COMPOSIÇÃO E FORMATAÇÃO
+// ------------------------------------------------------------
+let isComposing = false;
+const noteEditor = document.getElementById('note-textarea');
+
+if (noteEditor) {
+  noteEditor.addEventListener('compositionstart', () => { isComposing = true; });
+  noteEditor.addEventListener('compositionend', () => { isComposing = false; });
+}
+
 // Grifar/sublinhar/limpar formatação do trecho selecionado na anotação
 function hp_noteFlashBtn(btn) {
   if (!btn) return;
@@ -3222,6 +3233,9 @@ function hp_noteFlashBtn(btn) {
 }
 
 function hp_noteFormat(type, btn) {
+  // Se estiver no meio de uma composição de caractere acentuado, não formate
+  if (isComposing) return;
+
   hp_noteFlashBtn(btn);
   const editor = document.getElementById('note-textarea');
   editor.focus();
@@ -6742,3 +6756,4 @@ hp_loadFavorites();
   }, { passive: true });
 })();
 </script>
+[file content end]
