@@ -2588,7 +2588,8 @@
     </div>
     <form onsubmit="return false;" autocomplete="on" style="display:contents;">
       <div id="note-textarea" contenteditable="true" data-placeholder="Escreva sua anotação ou reflexão..."
-        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text" lang="pt-BR"></div>
+        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text" lang="pt-BR"
+        role="textbox" aria-multiline="true"></div>
     </form>
     <div class="note-actions">
       <button class="note-del-btn" onclick="deleteNote()" title="Excluir anotação">🗑</button>
@@ -3222,7 +3223,12 @@ const noteEditor = document.getElementById('note-textarea');
 
 if (noteEditor) {
   noteEditor.addEventListener('compositionstart', () => { isComposing = true; });
-  noteEditor.addEventListener('compositionend', () => { isComposing = false; });
+  noteEditor.addEventListener('compositionend', () => {
+    // Espera 80ms antes de desligar a flag — o IME do Android às vezes
+    // dispara compositionend ANTES de inserir o caractere final, e se
+    // outra função mexer no DOM nesse intervalo, o caractere some.
+    setTimeout(() => { isComposing = false; }, 80);
+  });
 }
 
 // Grifar/sublinhar/limpar formatação do trecho selecionado na anotação
@@ -3311,6 +3317,8 @@ function hp_noteResetToolbarPosition() {
 }
 
 function hp_noteUpdateFloatToolbar() {
+  // Proteção contra interferência com IME do Android
+  if (isComposing) return;
   const editor = document.getElementById('note-textarea');
   const panel = document.getElementById('note-panel');
   const el = document.getElementById('note-float-toolbar');
@@ -3352,8 +3360,11 @@ function hp_noteUpdateFloatToolbar() {
 }
 
 document.addEventListener('selectionchange', function() {
+  // NUNCA mexe no DOM durante composição do IME (acento, sugestão de palavra)
+  // — qualquer manipulação nesse momento cancela a composição e o caractere some.
+  if (isComposing) return;
   clearTimeout(window._hp_noteSelTimer);
-  window._hp_noteSelTimer = setTimeout(hp_noteUpdateFloatToolbar, 30);
+  window._hp_noteSelTimer = setTimeout(hp_noteUpdateFloatToolbar, 120);
 });
 
 function saveNote() {
