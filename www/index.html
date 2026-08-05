@@ -1406,6 +1406,7 @@
     display: flex;
     gap: 6px;
     margin-top: 8px;
+    flex-shrink: 0;
   }
   #note-float-toolbar button {
     flex: 1;
@@ -1415,22 +1416,11 @@
     color: var(--text-primary);
     font-family: 'Lato', sans-serif;
     font-size: 13px;
-    padding: 8px 6px;
+    padding: 10px 8px;
     cursor: pointer;
     white-space: nowrap;
   }
-  #note-float-toolbar.floating {
-    position: fixed;
-    margin-top: 0;
-    background: var(--bg-card);
-    border: 1px solid var(--accent-gold);
-    border-radius: 10px;
-    padding: 5px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
-    z-index: 99999;
-  }
-  #note-float-toolbar.floating button { flex: none; padding: 7px 9px; }
-  #note-float-toolbar button.pressed { background: rgba(212,165,40,0.28); }
+  #note-float-toolbar button:active { background: rgba(212,165,40,0.28); }
   .note-ref-label {
     font-family: 'Cinzel', serif;
     font-size: 13px;
@@ -2581,14 +2571,15 @@
     <button class="panel-close" onclick="closePanel('note-panel')">✕</button>
     <span class="note-ref-label" id="note-ref-label">—</span>
     <div id="note-float-toolbar">
-      <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('hilite', this)">🖍️ Grifar</button>
-      <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('underline', this)">U̲ Sublinhar</button>
-      <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('clear', this)">✕ Limpar</button>
+      <button type="button" onclick="noteToolCopy()">📋 Copiar tudo</button>
+      <button type="button" onclick="noteToolPaste()">📄 Colar</button>
+      <button type="button" onclick="noteToolClear()">✕ Limpar</button>
     </div>
     <form onsubmit="return false;" autocomplete="on" style="display:contents;">
       <textarea id="note-textarea" placeholder="Escreva sua anotação ou reflexão..."
         autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" 
-        inputmode="text" lang="pt-BR"></textarea>
+        inputmode="text" lang="pt-BR" enterkeyhint="done"
+        style="-webkit-text-size-adjust:100%;"></textarea>
     </form>
     <div class="note-actions">
       <button class="note-del-btn" onclick="deleteNote()" title="Excluir anotação">🗑</button>
@@ -3222,7 +3213,38 @@ function editNoteFromView() {
 // ------------------------------------------------------------
 let isComposing = false;
 // Com textarea nativo, o IME do Android funciona sem interferência.
-// Os listeners de composição e a barra flutuante não são mais necessários.
+
+function noteToolCopy() {
+  const ta = document.getElementById('note-textarea');
+  if (!ta || !ta.value.trim()) { showToast('Nada para copiar'); return; }
+  navigator.clipboard.writeText(ta.value).then(() => showToast('📋 Texto copiado!')).catch(() => {
+    ta.select(); document.execCommand('copy'); showToast('📋 Texto copiado!');
+  });
+}
+
+function noteToolPaste() {
+  const ta = document.getElementById('note-textarea');
+  if (!ta) return;
+  ta.focus();
+  navigator.clipboard.readText().then(text => {
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    ta.value = ta.value.substring(0, start) + text + ta.value.substring(end);
+    ta.selectionStart = ta.selectionEnd = start + text.length;
+    showToast('📄 Colado!');
+  }).catch(() => {
+    showToast('Use o menu do teclado para colar');
+  });
+}
+
+function noteToolClear() {
+  const ta = document.getElementById('note-textarea');
+  if (!ta || !ta.value.trim()) return;
+  if (confirm('Limpar todo o texto da anotação?')) {
+    ta.value = '';
+    ta.focus();
+    showToast('Texto limpo');
+  }
+}
 
 // Grifar/sublinhar/limpar formatação do trecho selecionado na anotação
 function hp_noteFlashBtn(btn) {
