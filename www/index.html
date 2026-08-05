@@ -1390,18 +1390,12 @@
     padding: 16px;
     margin-top: 8px;
     outline: none;
+    resize: none;
     transition: border-color 0.2s ease;
   }
   #note-textarea:focus { border-color: var(--accent-gold); }
-  #note-textarea:empty:before {
-    content: attr(data-placeholder);
+  #note-textarea::placeholder {
     color: var(--text-muted);
-    pointer-events: none;
-  }
-  #note-textarea mark, #note-view-text mark {
-    background: none;
-    color: inherit;
-    font-weight: 700;
   }
   #note-textarea mark, #note-view-text mark {
     background: none;
@@ -1412,7 +1406,6 @@
     display: flex;
     gap: 6px;
     margin-top: 8px;
-    flex-shrink: 0;
   }
   #note-float-toolbar button {
     flex: 1;
@@ -1422,11 +1415,22 @@
     color: var(--text-primary);
     font-family: 'Lato', sans-serif;
     font-size: 13px;
-    padding: 10px 8px;
+    padding: 8px 6px;
     cursor: pointer;
     white-space: nowrap;
   }
-  #note-float-toolbar button:active { background: rgba(212,165,40,0.28); }
+  #note-float-toolbar.floating {
+    position: fixed;
+    margin-top: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--accent-gold);
+    border-radius: 10px;
+    padding: 5px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    z-index: 99999;
+  }
+  #note-float-toolbar.floating button { flex: none; padding: 7px 9px; }
+  #note-float-toolbar button.pressed { background: rgba(212,165,40,0.28); }
   .note-ref-label {
     font-family: 'Cinzel', serif;
     font-size: 13px;
@@ -2581,10 +2585,11 @@
       <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('underline', this)">U̲ Sublinhar</button>
       <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('clear', this)">✕ Limpar</button>
     </div>
-    <div id="note-textarea" contenteditable="true" data-placeholder="Escreva sua anotação ou reflexão..."
-      autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text" lang="pt-BR"></div>
-    <!-- Âncora pra onde a barra se move quando há seleção (evita o menu nativo do Android) -->
-    <div id="note-toolbar-bottom-anchor"></div>
+    <form onsubmit="return false;" autocomplete="on" style="display:contents;">
+      <textarea id="note-textarea" placeholder="Escreva sua anotação ou reflexão..."
+        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" 
+        inputmode="text" lang="pt-BR"></textarea>
+    </form>
     <div class="note-actions">
       <button class="note-del-btn" onclick="deleteNote()" title="Excluir anotação">🗑</button>
       <button class="note-save-btn" onclick="saveNote()">SALVAR ANOTAÇÃO</button>
@@ -3186,7 +3191,10 @@ function openNoteEditor() {
   const book = bibleData[currentBook];
   document.getElementById('note-ref-label').textContent =
     `${book.name} ${currentChapter + 1}:${vi + 1}`;
-  document.getElementById('note-textarea').innerHTML = notes[key] || '';
+  // Textarea usa .value, não innerHTML. Notas antigas com HTML são convertidas pra texto puro.
+  const notaRaw = notes[key] || '';
+  const tmp = document.createElement('div'); tmp.innerHTML = notaRaw;
+  document.getElementById('note-textarea').value = tmp.textContent || tmp.innerText || '';
   lastSelectedVerse = vi;
   openPanel('note-panel');
 }
@@ -3213,51 +3221,8 @@ function editNoteFromView() {
 // CORREÇÃO: FLAG DE COMPOSIÇÃO E FORMATAÇÃO
 // ------------------------------------------------------------
 let isComposing = false;
-// Com contenteditable, proteger o IME contra manipulação de DOM durante composição de acentos.
-const noteEditor = document.getElementById('note-textarea');
-
-if (noteEditor) {
-  noteEditor.addEventListener('compositionstart', () => { isComposing = true; });
-  noteEditor.addEventListener('compositionend', () => {
-    setTimeout(() => { isComposing = false; }, 100);
-  });
-}
-
-// ── BARRA DE FERRAMENTAS: topo por padrão, desce quando há seleção (evita menu nativo Android) ──
-(function(){
-  var editor = document.getElementById('note-textarea');
-  var toolbar = document.getElementById('note-float-toolbar');
-  var anchor = document.getElementById('note-toolbar-bottom-anchor');
-  var refLabel = document.getElementById('note-ref-label');
-  if (!editor || !toolbar || !anchor || !refLabel) return;
-
-  var posicao = 'topo';
-
-  function moverParaBaixo() {
-    if (posicao === 'baixo') return;
-    anchor.parentNode.insertBefore(toolbar, anchor);
-    posicao = 'baixo';
-  }
-  function moverParaTopo() {
-    if (posicao === 'topo') return;
-    refLabel.parentNode.insertBefore(toolbar, refLabel.nextSibling);
-    posicao = 'topo';
-  }
-
-  document.addEventListener('selectionchange', function() {
-    if (isComposing) return;
-    var panel = document.getElementById('note-panel');
-    if (!panel || !panel.classList.contains('open')) return;
-    if (document.activeElement !== editor && !editor.contains(document.activeElement)) return;
-
-    var sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && editor.contains(sel.anchorNode)) {
-      moverParaBaixo();
-    } else {
-      moverParaTopo();
-    }
-  });
-})();
+// Com textarea nativo, o IME do Android funciona sem interferência.
+// Os listeners de composição e a barra flutuante não são mais necessários.
 
 // Grifar/sublinhar/limpar formatação do trecho selecionado na anotação
 function hp_noteFlashBtn(btn) {
@@ -3393,8 +3358,8 @@ function saveNote() {
   if (lastSelectedVerse === null) return;
   const key = `${currentBook}-${currentChapter}-${lastSelectedVerse}`;
   const editor = document.getElementById('note-textarea');
-  const txt = editor.textContent.trim();
-  if (txt) { notes[key] = editor.innerHTML; } else { delete notes[key]; }
+  const txt = editor.value.trim();
+  if (txt) { notes[key] = txt; } else { delete notes[key]; }
   saveNoteData();
   closePanel('note-panel');
   renderChapter(true);
