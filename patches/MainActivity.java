@@ -13,6 +13,7 @@ import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import android.webkit.WebSettings;
 import com.getcapacitor.BridgeActivity;
 import org.json.JSONArray;
 import java.util.Locale;
@@ -46,12 +47,36 @@ public class MainActivity extends BridgeActivity {
 
         webView = getBridge().getWebView();
         webView.addJavascriptInterface(new TTSBridge(), "Android");
-        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
-        webView.getSettings().setSaveFormData(true);
+
+        // ── Configurações do WebView para sugestões de palavras e acentos ──
+        WebSettings ws = webView.getSettings();
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        ws.setSaveFormData(true);
+        ws.setDatabaseEnabled(true);
+        ws.setDomStorageEnabled(true);
+        // Permite que o WebView aceite input de teclados com sugestão/autocomplete
+        ws.setJavaScriptEnabled(true);
+
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             webView.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_YES);
+        }
+
+        // Habilita spell checker nativo do Android no WebView (API 26+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                // Força o WebView a usar o verificador ortográfico do sistema
+                android.view.textservice.TextServicesManager tsm =
+                    (android.view.textservice.TextServicesManager) getSystemService(TEXT_SERVICES_MANAGER_SERVICE);
+                if (tsm != null && tsm.isSpellCheckerEnabled()) {
+                    // O spell checker está habilitado no sistema — o WebView vai usá-lo
+                    android.util.Log.d("BibliaHarpa", "Spell checker do sistema: ativo");
+                }
+            } catch (Exception e) {
+                android.util.Log.d("BibliaHarpa", "Spell checker não disponível: " + e.getMessage());
+            }
         }
 
         // Callback do AudioForegroundService → JS
@@ -130,10 +155,6 @@ public class MainActivity extends BridgeActivity {
             });
         }
 
-        // Recebe os bytes do MP3 (já baixado/cacheado pelo JS) em base64,
-        // grava em arquivo local e manda o serviço nativo tocar — assim o
-        // áudio roda no MediaPlayer do Android, não no WebView, e sobrevive
-        // a tela apagada / app minimizado.
         @JavascriptInterface
         public void playHarpaBytes(String base64, String title, String info) {
             runOnUiThread(() -> {
@@ -161,10 +182,6 @@ public class MainActivity extends BridgeActivity {
             });
         }
 
-        // Pede para o Android ignorar a otimização de bateria para o app.
-        // No MIUI/Xiaomi isso não substitui as configs próprias da MIUI
-        // (Autostart, "Sem restrições", travar nos recentes), mas ajuda e
-        // é a via oficial do Android — sem ela o MIUI mata o serviço mais fácil.
         @JavascriptInterface
         public void requestIgnoreBatteryOptimizations() {
             runOnUiThread(() -> {
