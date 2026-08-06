@@ -1390,19 +1390,11 @@
     padding: 16px;
     margin-top: 8px;
     outline: none;
+    resize: none;
     transition: border-color 0.2s ease;
   }
   #note-textarea:focus { border-color: var(--accent-gold); }
-  #note-textarea:empty:before {
-    content: attr(data-placeholder);
-    color: var(--text-muted);
-    pointer-events: none;
-  }
-  #note-textarea mark, #note-view-text mark {
-    background: none;
-    color: inherit;
-    font-weight: 700;
-  }
+  #note-textarea::placeholder { color: var(--text-muted); }
   #note-textarea mark, #note-view-text mark {
     background: none;
     color: inherit;
@@ -2577,13 +2569,13 @@
     <button class="panel-close" onclick="closePanel('note-panel')">✕</button>
     <span class="note-ref-label" id="note-ref-label">—</span>
     <div id="note-float-toolbar">
-      <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('hilite', this)">🖍️ Grifar</button>
-      <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('underline', this)">U̲ Sublinhar</button>
-      <button type="button" onmousedown="event.preventDefault()" onclick="hp_noteFormat('clear', this)">✕ Limpar</button>
+      <button type="button" onclick="noteFormatMark('bold')">🖍️ Grifar</button>
+      <button type="button" onclick="noteFormatMark('underline')">U̲ Sublinhar</button>
+      <button type="button" onclick="noteFormatMark('clear')">✕ Limpar</button>
     </div>
-    <div id="note-textarea" contenteditable="true" data-placeholder="Escreva sua anotação ou reflexão..."
-      autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text" lang="pt-BR"></div>
-    <!-- Âncora pra onde a barra se move quando há seleção (evita o menu nativo do Android) -->
+    <textarea id="note-textarea" placeholder="Escreva sua anotação ou reflexão..."
+      autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+      inputmode="text" lang="pt-BR"></textarea>
     <div id="note-toolbar-bottom-anchor"></div>
     <div class="note-actions">
       <button class="note-del-btn" onclick="deleteNote()" title="Excluir anotação">🗑</button>
@@ -3186,7 +3178,18 @@ function openNoteEditor() {
   const book = bibleData[currentBook];
   document.getElementById('note-ref-label').textContent =
     `${book.name} ${currentChapter + 1}:${vi + 1}`;
-  document.getElementById('note-textarea').innerHTML = notes[key] || '';
+  // Carrega a nota no textarea — converte HTML antigo pra marcadores de texto
+  var notaRaw = notes[key] || '';
+  // Se a nota tem HTML (de versões anteriores), converte pra marcadores
+  if (notaRaw.includes('<')) {
+    var tmp = document.createElement('div'); tmp.innerHTML = notaRaw;
+    // <b>/<strong>/<mark> → *texto*
+    tmp.querySelectorAll('b,strong,mark').forEach(function(el){ el.textContent = '*' + el.textContent + '*'; });
+    // <u> → _texto_
+    tmp.querySelectorAll('u').forEach(function(el){ el.textContent = '_' + el.textContent + '_'; });
+    notaRaw = tmp.textContent || tmp.innerText || '';
+  }
+  document.getElementById('note-textarea').value = notaRaw;
   lastSelectedVerse = vi;
   openPanel('note-panel');
 }
@@ -3198,7 +3201,7 @@ function viewNote(verseIdx) {
   const book = bibleData[currentBook];
   document.getElementById('note-view-ref').textContent =
     `${book.name} ${currentChapter + 1}:${verseIdx + 1}`;
-  document.getElementById('note-view-text').innerHTML = note;
+  document.getElementById('note-view-text').innerHTML = renderNoteMarkers(note);
   lastSelectedVerse = verseIdx;
   if (selectedVerses.indexOf(verseIdx) < 0) selectedVerses.push(verseIdx);
   openPanel('note-view-panel');
@@ -3213,48 +3216,46 @@ function editNoteFromView() {
 // CORREÇÃO: FLAG DE COMPOSIÇÃO E FORMATAÇÃO
 // ------------------------------------------------------------
 let isComposing = false;
-// Com contenteditable, proteger o IME contra manipulação de DOM durante composição de acentos.
-// NÃO usar selectionchange — ele dispara durante a composição em alguns teclados Android
-// e quebra os acentos. Usamos touchend/mouseup, que só disparam DEPOIS do dedo sair da tela.
+// ── FORMATAÇÃO COM MARCADORES (funciona com textarea) ──────────────
+// *texto* = grifado/negrito, _texto_ = sublinhado
+function noteFormatMark(tipo) {
+  var ta = document.getElementById('note-textarea');
+  if (!ta) return;
+  var start = ta.selectionStart, end = ta.selectionEnd;
+  if (start === end) { showToast('Selecione um trecho primeiro'); return; }
+  var texto = ta.value;
+  var selecionado = texto.substring(start, end);
 
-// ── BARRA DE FERRAMENTAS: topo por padrão, desce quando há seleção (evita menu nativo Android) ──
-(function(){
-  var editor = document.getElementById('note-textarea');
-  var toolbar = document.getElementById('note-float-toolbar');
-  var anchor = document.getElementById('note-toolbar-bottom-anchor');
-  var refLabel = document.getElementById('note-ref-label');
-  if (!editor || !toolbar || !anchor || !refLabel) return;
-
-  var posicao = 'topo';
-
-  function moverParaBaixo() {
-    if (posicao === 'baixo') return;
-    anchor.parentNode.insertBefore(toolbar, anchor);
-    posicao = 'baixo';
+  if (tipo === 'clear') {
+    // Remove marcadores do trecho selecionado
+    var limpo = selecionado.replace(/\*([^*]+)\*/g, '$1').replace(/_([^_]+)_/g, '$1');
+    ta.value = texto.substring(0, start) + limpo + texto.substring(end);
+    ta.selectionStart = start; ta.selectionEnd = start + limpo.length;
+    showToast('Formatação removida');
+  } else if (tipo === 'bold') {
+    ta.value = texto.substring(0, start) + '*' + selecionado + '*' + texto.substring(end);
+    ta.selectionStart = start; ta.selectionEnd = end + 2;
+    showToast('Grifado!');
+  } else if (tipo === 'underline') {
+    ta.value = texto.substring(0, start) + '_' + selecionado + '_' + texto.substring(end);
+    ta.selectionStart = start; ta.selectionEnd = end + 2;
+    showToast('Sublinhado!');
   }
-  function moverParaTopo() {
-    if (posicao === 'topo') return;
-    refLabel.parentNode.insertBefore(toolbar, refLabel.nextSibling);
-    posicao = 'topo';
-  }
+  ta.focus();
+}
 
-  function checarSelecao() {
-    var panel = document.getElementById('note-panel');
-    if (!panel || !panel.classList.contains('open')) return;
-    var sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && editor.contains(sel.anchorNode)) {
-      moverParaBaixo();
-    } else {
-      moverParaTopo();
-    }
-  }
-
-  // touchend/mouseup: disparam DEPOIS do gesto, nunca durante digitação
-  editor.addEventListener('touchend', function(){ setTimeout(checarSelecao, 80); }, {passive:true});
-  editor.addEventListener('mouseup', function(){ setTimeout(checarSelecao, 80); });
-  // Ao digitar, volta pro topo (input nunca tem seleção ativa)
-  editor.addEventListener('input', function(){ moverParaTopo(); });
-})();
+// ── RENDERIZAR MARCADORES COMO HTML (pra visualização) ─────────────
+function renderNoteMarkers(texto) {
+  // Escapa HTML primeiro
+  var html = texto.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // *negrito* → <b>negrito</b>
+  html = html.replace(/\*([^*\n]+)\*/g, '<b style="font-weight:700;">$1</b>');
+  // _sublinhado_ → <u>sublinhado</u>
+  html = html.replace(/_([^_\n]+)_/g, '<u>$1</u>');
+  // Quebras de linha
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
 
 // Grifar/sublinhar/limpar formatação do trecho selecionado na anotação
 function hp_noteFlashBtn(btn) {
@@ -3384,14 +3385,14 @@ function hp_noteUpdateFloatToolbar() {
   el.style.left = left + 'px';
 }
 
-// selectionchange desativado — substituído por touchend/mouseup
+// Formatação de notas agora usa marcadores de texto (*negrito*, _sublinhado_) via textarea
 
 function saveNote() {
   if (lastSelectedVerse === null) return;
   const key = `${currentBook}-${currentChapter}-${lastSelectedVerse}`;
   const editor = document.getElementById('note-textarea');
-  const txt = editor.textContent.trim();
-  if (txt) { notes[key] = editor.innerHTML; } else { delete notes[key]; }
+  const txt = editor.value.trim();
+  if (txt) { notes[key] = txt; } else { delete notes[key]; }
   saveNoteData();
   closePanel('note-panel');
   renderChapter(true);
