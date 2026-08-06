@@ -1,5 +1,5 @@
 // ── Bíblia JFA — Service Worker ──────────────────────────
-const CACHE_NAME = 'biblia JFA Offline';
+const CACHE_NAME = 'biblia-jfa-v3';
 
 // Arquivos essenciais que ficam em cache (funcionam offline)
 const CACHE_FILES = [
