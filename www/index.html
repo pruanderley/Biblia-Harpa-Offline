@@ -1379,7 +1379,6 @@
     width: 100%;
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1388,21 +1387,12 @@
     font-size: 17px;
     line-height: 1.7;
     padding: 16px;
-    margin-top: 8px;
+    resize: none;
+    margin-top: 10px;
     outline: none;
     transition: border-color 0.2s ease;
   }
   #note-textarea:focus { border-color: var(--accent-gold); }
-  #note-textarea:empty:before {
-    content: attr(data-placeholder);
-    color: var(--text-muted);
-    pointer-events: none;
-  }
-  #note-textarea mark, #note-view-text mark {
-    background: none;
-    color: inherit;
-    font-weight: 700;
-  }
   .note-ref-label {
     font-family: 'Cinzel', serif;
     font-size: 13px;
@@ -2552,11 +2542,8 @@
     <div class="panel-title">📝 ANOTAÇÃO</div>
     <button class="panel-close" onclick="closePanel('note-panel')">✕</button>
     <span class="note-ref-label" id="note-ref-label">—</span>
-
-    <form onsubmit="return false;" autocomplete="on" style="display:contents;">
-      <div id="note-textarea" contenteditable="true" data-placeholder="Escreva sua anotação ou reflexão..."
-        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" inputmode="text" lang="pt-BR"></div>
-    </form>
+    <textarea id="note-textarea" placeholder="Escreva sua anotação ou reflexão..."
+      autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
     <div class="note-actions">
       <button class="note-del-btn" onclick="deleteNote()" title="Excluir anotação">🗑</button>
       <button class="note-save-btn" onclick="saveNote()">SALVAR ANOTAÇÃO</button>
@@ -3151,23 +3138,6 @@ function saveNoteData() {
   try { localStorage.setItem('jfa_notes', JSON.stringify(notes)); } catch(e){}
 }
 
-// Converte uma nota salva (em qualquer formato usado até aqui) em HTML
-// pronto pra exibir/editar: rich HTML novo, JSON {text,bold,underline}
-// de uma versão intermediária, ou texto puro do formato mais antigo.
-function hp_noteToHtml(raw) {
-  if (!raw) return '';
-  try {
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj.text === 'string') {
-      let html = hp_esc(obj.text);
-      if (obj.underline) html = '<u>' + html + '</u>';
-      if (obj.bold) html = '<mark>' + html + '</mark>';
-      return html;
-    }
-  } catch(e) { /* não é JSON, segue abaixo */ }
-  return raw; // já é HTML (ou texto puro, que é HTML válido também)
-}
-
 function openNoteEditor() {
   if (selectedVerses.length === 0) { showToast('Toque em um versículo primeiro'); return; }
   const vi = lastSelectedVerse !== null ? lastSelectedVerse : selectedVerses.slice()[0];
@@ -3175,7 +3145,7 @@ function openNoteEditor() {
   const book = bibleData[currentBook];
   document.getElementById('note-ref-label').textContent =
     `${book.name} ${currentChapter + 1}:${vi + 1}`;
-  document.getElementById('note-textarea').innerHTML = hp_noteToHtml(notes[key]);
+  document.getElementById('note-textarea').value = notes[key] || '';
   lastSelectedVerse = vi;
   openPanel('note-panel');
 }
@@ -3187,7 +3157,7 @@ function viewNote(verseIdx) {
   const book = bibleData[currentBook];
   document.getElementById('note-view-ref').textContent =
     `${book.name} ${currentChapter + 1}:${verseIdx + 1}`;
-  document.getElementById('note-view-text').innerHTML = hp_noteToHtml(note);
+  document.getElementById('note-view-text').textContent = note;
   lastSelectedVerse = verseIdx;
   if (selectedVerses.indexOf(verseIdx) < 0) selectedVerses.push(verseIdx);
   openPanel('note-view-panel');
@@ -3198,16 +3168,11 @@ function editNoteFromView() {
   setTimeout(() => openNoteEditor(), 200);
 }
 
-
 function saveNote() {
   if (lastSelectedVerse === null) return;
   const key = `${currentBook}-${currentChapter}-${lastSelectedVerse}`;
-  const editor = document.getElementById('note-textarea');
-  // Remove os espaçadores invisíveis usados só pra ancorar o cursor durante
-  // a edição — não devem persistir na anotação salva.
-  editor.querySelectorAll('.hp-note-spacer').forEach(sp => sp.remove());
-  const txt = editor.textContent.trim();
-  if (txt) { notes[key] = editor.innerHTML; } else { delete notes[key]; }
+  const txt = document.getElementById('note-textarea').value.trim();
+  if (txt) { notes[key] = txt; } else { delete notes[key]; }
   saveNoteData();
   closePanel('note-panel');
   renderChapter(true);
@@ -5324,10 +5289,7 @@ function openPanel(id)  {
   document.getElementById(id).classList.add('open');
 }
 
-function closePanel(id) {
-  document.getElementById(id).classList.remove('open');
-  if (id === 'note-panel' && typeof hp_noteResetToolbarPosition === 'function') hp_noteResetToolbarPosition();
-}
+function closePanel(id) { document.getElementById(id).classList.remove('open'); }
 
 function closePanelIfOutside(e, id) {
   if (e.target.id === id) closePanel(id);
@@ -6602,4 +6564,3 @@ hp_loadFavorites();
   }, { passive: true });
 })();
 </script>
-[file content end]
