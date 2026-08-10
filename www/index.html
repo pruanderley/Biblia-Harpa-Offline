@@ -2815,6 +2815,18 @@ function selectVerse(idx) {
 function showVerseMenu(verseEl) {
   var menu = document.getElementById('verse-menu');
   menu.classList.add('visible');
+  // Se o versículo tocado ficar perto do fim da tela, o menu (fixo embaixo)
+  // pode cobrir ele — rola o conteúdo pra cima só o suficiente pra manter
+  // o versículo visível acima do menu.
+  requestAnimationFrame(function() {
+    var vRect = verseEl.getBoundingClientRect();
+    var mRect = menu.getBoundingClientRect();
+    var overlap = vRect.bottom - mRect.top;
+    if (overlap > -20) {
+      var content = document.getElementById('content');
+      content.scrollBy({ top: overlap + 70, behavior: 'smooth' });
+    }
+  });
 }
 
 function hideVerseMenu() {
@@ -3138,6 +3150,23 @@ function saveNoteData() {
   try { localStorage.setItem('jfa_notes', JSON.stringify(notes)); } catch(e){}
 }
 
+// Converte uma nota salva (em qualquer formato usado até aqui) em texto
+// puro pra exibir: HTML rico ou JSON {text,bold,underline} de versões
+// anteriores viram só o texto, já que o campo voltou a ser simples.
+function hp_noteToPlainText(raw) {
+  if (!raw) return '';
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj.text === 'string') return obj.text;
+  } catch(e) { /* não é JSON, segue abaixo */ }
+  if (raw.indexOf('<') >= 0) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = raw;
+    return tmp.textContent || tmp.innerText || '';
+  }
+  return raw;
+}
+
 function openNoteEditor() {
   if (selectedVerses.length === 0) { showToast('Toque em um versículo primeiro'); return; }
   const vi = lastSelectedVerse !== null ? lastSelectedVerse : selectedVerses.slice()[0];
@@ -3145,7 +3174,7 @@ function openNoteEditor() {
   const book = bibleData[currentBook];
   document.getElementById('note-ref-label').textContent =
     `${book.name} ${currentChapter + 1}:${vi + 1}`;
-  document.getElementById('note-textarea').value = notes[key] || '';
+  document.getElementById('note-textarea').value = hp_noteToPlainText(notes[key]);
   lastSelectedVerse = vi;
   openPanel('note-panel');
 }
@@ -3157,7 +3186,7 @@ function viewNote(verseIdx) {
   const book = bibleData[currentBook];
   document.getElementById('note-view-ref').textContent =
     `${book.name} ${currentChapter + 1}:${verseIdx + 1}`;
-  document.getElementById('note-view-text').textContent = note;
+  document.getElementById('note-view-text').textContent = hp_noteToPlainText(note);
   lastSelectedVerse = verseIdx;
   if (selectedVerses.indexOf(verseIdx) < 0) selectedVerses.push(verseIdx);
   openPanel('note-view-panel');
@@ -5289,7 +5318,9 @@ function openPanel(id)  {
   document.getElementById(id).classList.add('open');
 }
 
-function closePanel(id) { document.getElementById(id).classList.remove('open'); }
+function closePanel(id) {
+  document.getElementById(id).classList.remove('open');
+}
 
 function closePanelIfOutside(e, id) {
   if (e.target.id === id) closePanel(id);
@@ -6564,3 +6595,4 @@ hp_loadFavorites();
   }, { passive: true });
 })();
 </script>
+[file content end]
