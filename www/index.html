@@ -19,8 +19,10 @@
      ADICIONE O ARQUIVO DE DADOS AQUI:
      Coloque o arquivo Biblia_data.js na mesma pasta que este HTML
      ======================================================== -->
-<script src="Biblia_data.js" defer></script>
+<!-- 🔥 SELETOR DE VERSÕES (SIMPLES E VISÍVEL) -->
+<script src="bible-versions-simple.js" defer></script>
 <script src="Harpa_data.js" defer></script>
+
 
 <style>
   :root {
@@ -6468,6 +6470,27 @@ window.addEventListener('popstate', function(e) {
 history.replaceState({ biblia: true }, '', '#biblia');
 </script>
 <script src="back-navigation.js"></script>
+
+<!-- 🔥 INICIALIZAR SELETOR DE VERSÕES -->
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log('🔥 Iniciando Bíblia com Seletor de Versões...');
+  
+  // ✅ CONFIGURE AQUI SUAS VERSÕES
+  // Exemplo: await BibleVersionsSimple.init(['JFA', 'NVI', 'ARA', 'ACF'], 'JFA');
+  
+  await BibleVersionsSimple.init(['JFA', 'NVI', 'ARA'], 'JFA');
+  
+  console.log('✅ Seletor Pronto!');
+  console.log('📖 Versão Ativa:', BibleVersionsSimple.currentVersion);
+  
+  // Escuta mudanças de versão
+  window.addEventListener('bible-version-changed', (e) => {
+    console.log('📖 Versão mudou para:', e.detail.version);
+    // Se precisar recarregar verso: renderChapter();
+  });
+});
+</script>
 </body>
 </html>
 
