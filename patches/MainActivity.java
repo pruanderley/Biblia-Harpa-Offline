@@ -5,6 +5,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.Uri;
+import android.util.Base64;
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.io.FileOutputStream;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -330,6 +334,27 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void exitApp() {
             runOnUiThread(() -> { finishAffinity(); System.exit(0); });
+        }
+
+        @JavascriptInterface
+        public void shareImage(String base64Png, String fileName) {
+            runOnUiThread(() -> {
+                try {
+                    byte[] bytes = Base64.decode(base64Png, Base64.DEFAULT);
+                    File dir = new File(getCacheDir(), "shared");
+                    if (!dir.exists()) dir.mkdirs();
+                    File f = new File(dir, (fileName == null || fileName.isEmpty()) ? "versiculo.png" : fileName);
+                    try (FileOutputStream out = new FileOutputStream(f)) { out.write(bytes); }
+                    Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".sharefiles", f);
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("image/png");
+                    send.putExtra(Intent.EXTRA_STREAM, uri);
+                    send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    Intent chooser = Intent.createChooser(send, "Compartilhar versículo");
+                    chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(chooser);
+                } catch (Exception e) { e.printStackTrace(); }
+            });
         }
 
         @JavascriptInterface
